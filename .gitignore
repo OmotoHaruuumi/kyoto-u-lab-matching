@@ -1,0 +1,27 @@
+# OS
+.DS_Store
+
+# 環境変数 (絶対にGitに入れない!)
+.env
+.env.local
+
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.pytest_cache/
+alembic.ini
+
+# Node.js / Frontend
+node_modules/
+.next/
+out/
+build/
+.pnp.*
+
+# IDE / Editor
+.vscode/
+.idea/
