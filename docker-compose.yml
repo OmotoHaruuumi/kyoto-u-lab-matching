@@ -1,0 +1,98 @@
+services:
+  # ------------------------------------------------------------------
+  # PostgreSQL with pgvector extension
+  # ------------------------------------------------------------------
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: kyoto_lab_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-labmatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-labmatch_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-labmatch_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-labmatch} -d ${POSTGRES_DB:-labmatch_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ------------------------------------------------------------------
+  # Redis (session cache / task queue)
+  # ------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: kyoto_lab_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ------------------------------------------------------------------
+  # Embedding API (FastAPI)
+  # ------------------------------------------------------------------
+  embedding_api:
+    build:
+      context: ./backend
+      dockerfile: embedding_api/Dockerfile
+    container_name: kyoto_embedding_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend_net
+
+  # ------------------------------------------------------------------
+  # Search API (FastAPI) — placeholder; Dockerfile added in Phase 2
+  # ------------------------------------------------------------------
+  search_api:
+    build:
+      context: ./backend
+      dockerfile: search_api/Dockerfile
+    container_name: kyoto_search_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend_net
+
+# ------------------------------------------------------------------
+# Volumes
+# ------------------------------------------------------------------
+volumes:
+  postgres_data:
+  redis_data:
+
+# ------------------------------------------------------------------
+# Networks
+# ------------------------------------------------------------------
+networks:
+  backend_net:
+    driver: bridge

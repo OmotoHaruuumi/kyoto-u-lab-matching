@@ -1,0 +1,33 @@
+# ==========================================
+# 京都大学 研究室マッチングシステム requirements.txt
+# ==========================================
+
+# --- API Server (FastAPI) ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+
+# --- Database (PostgreSQL, pgvector, SQLAlchemy, Alembic) ---
+sqlalchemy>=2.0.29
+alembic>=1.13.1
+asyncpg>=0.29.0           # 非同期接続用ドライバー
+psycopg2-binary>=2.9.9    # 同期接続・バックアップ用
+pgvector>=0.2.5           # pgvectorのSQLAlchemy拡張
+
+# --- Cache (Redis) ---
+redis>=5.0.3
+
+# --- LLM / AI (Gemini API) ---
+google-generativeai>=0.4.1
+
+# --- Crawler / Scraping ---
+playwright>=1.42.0
+beautifulsoup4>=4.12.3
+lxml>=5.1.0               # BeautifulSoupの高速パーサー
+
+# --- Utilities & Testing ---
+httpx>=0.27.0             # 非同期HTTPクライアント（内部API呼び出し用）
+pytest>=8.1.1
+pytest-asyncio>=0.23.6
+python-dotenv>=1.0.1      # .envファイルの読み込み用
