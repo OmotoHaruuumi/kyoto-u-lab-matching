@@ -1,0 +1,18 @@
+# クロール対象のインデックスページURL（1行1URL）
+# このファイルに追加するだけで新しい研究科・コースがクロール対象になります
+#
+# ========== 京都大学大学院 情報学研究科 ==========
+# 知能情報学コース
+https://www.i.kyoto-u.ac.jp/course/ist/
+# 社会情報学コース
+https://www.i.kyoto-u.ac.jp/course/soc/
+# 先端数理科学コース
+https://www.i.kyoto-u.ac.jp/course/ams/
+# 数理工学コース
+https://www.i.kyoto-u.ac.jp/course/amp/
+# システム科学コース
+https://www.i.kyoto-u.ac.jp/course/sys/
+# 通信情報システムコース
+https://www.i.kyoto-u.ac.jp/course/cce/
+# データ科学コース
+https://www.i.kyoto-u.ac.jp/course/ds/

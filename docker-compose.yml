@@ -83,6 +83,23 @@ services:
     networks:
       - backend_net
 
+  crawler:
+    build:
+      context: .
+      dockerfile: crawler/Dockerfile
+    container_name: kyoto_crawler
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      embedding_api:
+        condition: service_started
+    networks:
+      - backend_net
+    profiles:
+      - crawler
+
 # ------------------------------------------------------------------
 # Volumes
 # ------------------------------------------------------------------
