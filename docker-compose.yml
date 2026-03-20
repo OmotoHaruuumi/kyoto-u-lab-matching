@@ -42,6 +42,26 @@ services:
       retries: 5
 
   # ------------------------------------------------------------------
+  # DB Migration (alembic) — run with: docker compose --profile migrate up migrate
+  # ------------------------------------------------------------------
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: search_api/Dockerfile
+    command: python3 -m alembic -c /app/db/alembic.ini upgrade head
+    env_file:
+      - .env
+    volumes:
+      - ./db:/app/db
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend_net
+    profiles:
+      - migrate
+
+  # ------------------------------------------------------------------
   # Embedding API (FastAPI)
   # ------------------------------------------------------------------
   embedding_api:
