@@ -3,7 +3,13 @@ backend/search_api/main.py
 
 Search API — FastAPI application.
 Implements Hybrid Search (Vector + Keyword) over Kyoto University research labs.
-Uses RRF (Reciprocal Rank Fusion) for score integration.
+Uses Weighted RRF (Reciprocal Rank Fusion) for score integration.
+
+Tuning parameters (all overridable via env vars):
+  RRF_K              — RRF constant (default 30; lower = stronger rank-based signal)
+  RRF_VECTOR_WEIGHT  — weight for vector search hits (default 0.7)
+  RRF_KEYWORD_WEIGHT — weight for keyword search hits (default 0.3)
+  SEARCH_CANDIDATE_LIMIT — candidate pool size per search mode (default 100)
 """
 
 from __future__ import annotations
@@ -35,8 +41,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 app = FastAPI(
     title="Kyoto Lab Matching — Search API",
-    description="Hybrid search over Kyoto University research labs using pgvector and RRF.",
-    version="0.1.0",
+    description="Hybrid search over Kyoto University research labs using pgvector and weighted RRF.",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -73,6 +79,19 @@ class SearchResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+EMBEDDING_API_URL: str = os.environ.get("EMBEDDING_API_URL", "http://embedding_api:8001")
+
+# RRF tuning — all overridable at runtime via environment variables
+RRF_K: int = int(os.environ.get("RRF_K", "30"))
+VECTOR_WEIGHT: float = float(os.environ.get("RRF_VECTOR_WEIGHT", "0.7"))
+KEYWORD_WEIGHT: float = float(os.environ.get("RRF_KEYWORD_WEIGHT", "0.3"))
+CANDIDATE_LIMIT: int = int(os.environ.get("SEARCH_CANDIDATE_LIMIT", "100"))
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 async def get_query_embedding(query: str) -> list[float]:
@@ -95,26 +114,41 @@ async def get_query_embedding(query: str) -> list[float]:
         )
 
 
-def compute_rrf(rank_vector: int | None, rank_keyword: int | None, k: int = 60) -> float:
+def compute_rrf(
+    rank_vector: int | None,
+    rank_keyword: int | None,
+    k: int = RRF_K,
+    w_v: float = VECTOR_WEIGHT,
+    w_k: float = KEYWORD_WEIGHT,
+) -> float:
     """
-    Computes reciprocal rank fusion score.
-    Higher is better. If a rank is None, it contributes 0.
+    Weighted Reciprocal Rank Fusion score.
+    Vector search is weighted higher (semantic relevance > literal match).
+    If a rank is None, that component contributes 0.
     """
     score = 0.0
     if rank_vector is not None:
-        score += 1.0 / (k + rank_vector)
+        score += w_v / (k + rank_vector)
     if rank_keyword is not None:
-        score += 1.0 / (k + rank_keyword)
+        score += w_k / (k + rank_keyword)
     return score
+
+
+def _keyword_conditions(query: str):
+    """
+    Build OR conditions for keyword search.
+    Splits the query into tokens and matches any token against chunk_text.
+    Single-character tokens are skipped to reduce noise.
+    """
+    tokens = [t.strip() for t in query.split() if len(t.strip()) > 1]
+    if not tokens:
+        tokens = [query]
+    return [EmbeddingChunk.chunk_text.ilike(f"%{token}%") for token in tokens]
 
 
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
-REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
-EMBEDDING_API_URL: str = os.environ.get("EMBEDDING_API_URL", "http://embedding_api:8001")
-
-
 @app.get("/health", tags=["health"])
 async def health() -> dict[str, Any]:
     """Readiness probe: checks DB and Redis connectivity."""
@@ -150,54 +184,50 @@ async def health() -> dict[str, Any]:
     tags=["search"],
 )
 async def search(
-    q: str = Query(..., description="Search query string"),
+    q: str = Query(..., description="Search query string", min_length=1),
     limit: int = Query(10, description="Max lab results to return", ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ) -> SearchResponse:
     """
-    Executes a hybrid search combining pgvector cosine distance and ILIKE keyword match.
-    Results are merged using RRF (Reciprocal Rank Fusion).
+    Executes a hybrid search combining pgvector cosine distance and token-based
+    keyword matching. Results are merged using Weighted RRF (vector weight 0.7,
+    keyword weight 0.3) with k=30 for sharper rank differentiation.
     """
-    logger.info(f"Received search query: '{q}'")
+    logger.info(f"Search query='{q}' limit={limit}")
 
     # 1. Get query embedding
     query_vector = await get_query_embedding(q)
 
-    # 2. Vector Search (Top 50 chunks)
-    # Cosine distance: smaller is closer. We order by distance ASC.
+    # 2. Vector Search — top CANDIDATE_LIMIT chunks by cosine distance
     stmt_vector = (
         select(EmbeddingChunk.id, EmbeddingChunk.lab_id)
         .order_by(EmbeddingChunk.embedding.cosine_distance(query_vector))
-        .limit(50)
+        .limit(CANDIDATE_LIMIT)
     )
     res_vector = await db.execute(stmt_vector)
     vector_rows = res_vector.all()
-    
-    # rank is 1-indexed
     vector_ranks = {row.id: rank for rank, row in enumerate(vector_rows, start=1)}
 
-    # 3. Keyword Search (Top 50 chunks)
-    # Simple ILIKE match for Phase 2 prototype
+    # 3. Keyword Search — token-based OR match, top CANDIDATE_LIMIT chunks
+    kw_conditions = _keyword_conditions(q)
     stmt_keyword = (
         select(EmbeddingChunk.id, EmbeddingChunk.lab_id)
-        .where(EmbeddingChunk.chunk_text.ilike(f"%{q}%"))
-        .limit(50)
+        .where(or_(*kw_conditions))
+        .limit(CANDIDATE_LIMIT)
     )
     res_keyword = await db.execute(stmt_keyword)
     keyword_rows = res_keyword.all()
-
     keyword_ranks = {row.id: rank for rank, row in enumerate(keyword_rows, start=1)}
 
-    # 4. RRF Scoring (chunk level)
+    # 4. Weighted RRF scoring at chunk level
     all_chunk_ids = set(vector_ranks.keys()) | set(keyword_ranks.keys())
     if not all_chunk_ids:
         return SearchResponse(query=q, results=[])
 
-    chunk_scores: dict[int, float] = {}
-    for cid in all_chunk_ids:
-        r_v = vector_ranks.get(cid)
-        r_k = keyword_ranks.get(cid)
-        chunk_scores[cid] = compute_rrf(r_v, r_k)
+    chunk_scores: dict[int, float] = {
+        cid: compute_rrf(vector_ranks.get(cid), keyword_ranks.get(cid))
+        for cid in all_chunk_ids
+    }
 
     # 5. Fetch full chunk data & aggregate by Lab
     stmt_chunks = select(EmbeddingChunk).where(EmbeddingChunk.id.in_(all_chunk_ids))
@@ -210,13 +240,8 @@ async def search(
     for chunk in chunks:
         score = chunk_scores[chunk.id]
         lid = chunk.lab_id
-        
         lab_scores[lid] = lab_scores.get(lid, 0.0) + score
-        
-        if lid not in lab_matched_chunks:
-            lab_matched_chunks[lid] = []
-            
-        lab_matched_chunks[lid].append(
+        lab_matched_chunks.setdefault(lid, []).append(
             ChunkMatch(
                 chunk_text=chunk.chunk_text,
                 source_type=chunk.source_type,
@@ -229,8 +254,7 @@ async def search(
         lab_matched_chunks[lid].sort(key=lambda x: x.combined_score, reverse=True)
 
     # 6. Fetch Lab master data for the top matched labs
-    top_lab_ids = sorted(lab_scores.keys(), key=lambda lid: lab_scores[lid], reverse=True)[:limit]
-    
+    top_lab_ids = sorted(lab_scores, key=lab_scores.__getitem__, reverse=True)[:limit]
     if not top_lab_ids:
         return SearchResponse(query=q, results=[])
 
@@ -238,23 +262,22 @@ async def search(
     res_labs = await db.execute(stmt_labs)
     labs_dict = {lab.id: lab for lab in res_labs.scalars().all()}
 
-    # 7. Construct response
-    results = []
-    for lid in top_lab_ids:
-        lab = labs_dict[lid]
-        results.append(
-            LabResult(
-                lab_id=lab.id,
-                name=lab.name,
-                name_en=lab.name_en,
-                department=lab.department,
-                faculty=lab.faculty,
-                lab_url=lab.lab_url,
-                description=lab.description,
-                keywords=lab.keywords,
-                matched_chunks=lab_matched_chunks[lid][:3],  # return top 3 chunks per lab
-                total_score=lab_scores[lid],
-            )
+    # 7. Construct response (preserve score-sorted order)
+    results = [
+        LabResult(
+            lab_id=lab.id,
+            name=lab.name,
+            name_en=lab.name_en,
+            department=lab.department,
+            faculty=lab.faculty,
+            lab_url=lab.lab_url,
+            description=lab.description,
+            keywords=lab.keywords,
+            matched_chunks=lab_matched_chunks[lab.id][:3],
+            total_score=lab_scores[lab.id],
         )
+        for lid in top_lab_ids
+        if (lab := labs_dict.get(lid))
+    ]
 
     return SearchResponse(query=q, results=results)

@@ -4,7 +4,7 @@ backend/embedding_api/main.py
 Embedding API — FastAPI application.
 Endpoint: POST /api/v1/embed
   - Accepts a list of text strings
-  - Calls Google Gemini text-embedding-004 to generate embeddings
+  - Calls Google Gemini text-embedding-004 to generate embeddings (via google-genai SDK)
   - Returns a list of float vectors
 
 In development / mock mode (MOCK_EMBEDDING=true) a deterministic random
@@ -20,10 +20,11 @@ import os
 import random
 from typing import Any
 
-import google.generativeai as genai
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from google import genai as google_genai
+from google.genai import types as genai_types
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -44,8 +45,10 @@ MOCK_MODE: bool = os.environ.get("MOCK_EMBEDDING", "false").lower() == "true"
 DATABASE_URL: str = os.environ.get("DATABASE_URL", "")
 REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 
+# Initialise the google-genai client (new SDK)
+_genai_client: google_genai.Client | None = None
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    _genai_client = google_genai.Client(api_key=GEMINI_API_KEY)
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -53,7 +56,7 @@ if GEMINI_API_KEY:
 app = FastAPI(
     title="Kyoto Lab Matching — Embedding API",
     description="Generates text embeddings via Google Gemini text-embedding-004.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -106,17 +109,22 @@ def _mock_embedding(text: str) -> list[float]:
 
 
 # ---------------------------------------------------------------------------
-# Helper: call Gemini API
+# Helper: call Gemini API via google-genai SDK
 # ---------------------------------------------------------------------------
 async def _gemini_embed(texts: list[str], task_type: str) -> list[list[float]]:
-    """Call Gemini text-embedding-004 and return vectors."""
-    try:
-        result = genai.embed_content(
-            model=EMBEDDING_MODEL,
-            content=texts,
-            task_type=task_type,
+    """Call Gemini text-embedding-004 and return vectors using the google-genai SDK."""
+    if _genai_client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Gemini client not initialised. Set GEMINI_API_KEY.",
         )
-        return result["embedding"] if isinstance(result["embedding"][0], list) else [result["embedding"]]
+    try:
+        result = _genai_client.models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=texts,
+            config=genai_types.EmbedContentConfig(task_type=task_type),
+        )
+        return [list(e.values) for e in result.embeddings]
     except Exception as exc:
         logger.exception("Gemini embedding call failed: %s", exc)
         raise HTTPException(
