@@ -122,7 +122,10 @@ async def _gemini_embed(texts: list[str], task_type: str) -> list[list[float]]:
         result = _genai_client.models.embed_content(
             model=EMBEDDING_MODEL,
             contents=texts,
-            config=genai_types.EmbedContentConfig(task_type=task_type),
+            config=genai_types.EmbedContentConfig(
+                task_type=task_type,
+                output_dimensionality=EMBEDDING_DIM,  # 常に768次元に固定
+            ),
         )
         return [list(e.values) for e in result.embeddings]
     except Exception as exc:

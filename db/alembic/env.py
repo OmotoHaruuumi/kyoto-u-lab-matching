@@ -33,10 +33,9 @@ from backend.shared import models  # noqa: F401, E402  (registers models on Base
 config = context.config
 
 # Override sqlalchemy.url from environment variable if present
+# Keep asyncpg driver — env.py uses async_engine_from_config which requires an async driver.
 database_url = os.environ.get("DATABASE_URL")
 if database_url:
-    # Alembic needs the sync driver for schema introspection; swap asyncpg → psycopg2
-    database_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
     config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
