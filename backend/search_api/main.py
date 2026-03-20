@@ -9,17 +9,19 @@ Uses RRF (Reciprocal Rank Fusion) for score integration.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 import httpx
+import redis.asyncio as aioredis
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pgvector.sqlalchemy import Vector
 
-from backend.shared.database import get_db
+from backend.shared.database import async_session_maker, get_db
 from backend.shared.models import EmbeddingChunk, Lab
 
 # ---------------------------------------------------------------------------
@@ -78,7 +80,7 @@ async def get_query_embedding(query: str) -> list[float]:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "http://embedding_api:8001/api/v1/embed",
+                f"{EMBEDDING_API_URL}/api/v1/embed",
                 json={"texts": [query], "task_type": "RETRIEVAL_QUERY"},
                 timeout=10.0,
             )
@@ -109,10 +111,36 @@ def compute_rrf(rank_vector: int | None, rank_keyword: int | None, k: int = 60) 
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+EMBEDDING_API_URL: str = os.environ.get("EMBEDDING_API_URL", "http://embedding_api:8001")
+
+
 @app.get("/health", tags=["health"])
 async def health() -> dict[str, Any]:
-    """Liveness probe."""
-    return {"status": "ok", "phase": 2}
+    """Readiness probe: checks DB and Redis connectivity."""
+    # --- DB check ---
+    db_status = "ok"
+    try:
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as exc:
+        db_status = f"error: {exc}"
+
+    # --- Redis check ---
+    redis_status = "ok"
+    try:
+        r = aioredis.from_url(REDIS_URL, socket_connect_timeout=3)
+        await r.ping()
+        await r.aclose()
+    except Exception as exc:
+        redis_status = f"error: {exc}"
+
+    overall = "ok" if db_status == "ok" and redis_status == "ok" else "degraded"
+    return {
+        "status": overall,
+        "db": db_status,
+        "redis": redis_status,
+    }
 
 
 @app.get(

@@ -21,10 +21,14 @@ from sqlalchemy.orm import DeclarativeBase
 # Connection URL
 # ---------------------------------------------------------------------------
 # Format: postgresql+asyncpg://user:password@host:port/dbname
-DATABASE_URL: str = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://labmatch:labmatch_secret@db:5432/labmatch_db",
-)
+# Must be set via environment variable (see .env.example).
+_DATABASE_URL = os.environ.get("DATABASE_URL")
+if not _DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. "
+        "Copy .env.example to .env and fill in the values."
+    )
+DATABASE_URL: str = _DATABASE_URL
 
 # ---------------------------------------------------------------------------
 # Engine

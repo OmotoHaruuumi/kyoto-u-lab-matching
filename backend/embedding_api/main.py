@@ -21,9 +21,12 @@ import random
 from typing import Any
 
 import google.generativeai as genai
+import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -38,6 +41,8 @@ GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
 EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "models/text-embedding-004")
 EMBEDDING_DIM: int = 768
 MOCK_MODE: bool = os.environ.get("MOCK_EMBEDDING", "false").lower() == "true"
+DATABASE_URL: str = os.environ.get("DATABASE_URL", "")
+REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -125,7 +130,37 @@ async def _gemini_embed(texts: list[str], task_type: str) -> list[list[float]]:
 # ---------------------------------------------------------------------------
 @app.get("/health", tags=["health"])
 async def health() -> dict[str, Any]:
-    return {"status": "ok", "mock": MOCK_MODE, "model": EMBEDDING_MODEL}
+    """Readiness probe: checks DB and Redis connectivity."""
+    # --- DB check ---
+    db_status = "ok"
+    if DATABASE_URL:
+        try:
+            engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            await engine.dispose()
+        except Exception as exc:
+            db_status = f"error: {exc}"
+    else:
+        db_status = "not configured"
+
+    # --- Redis check ---
+    redis_status = "ok"
+    try:
+        r = aioredis.from_url(REDIS_URL, socket_connect_timeout=3)
+        await r.ping()
+        await r.aclose()
+    except Exception as exc:
+        redis_status = f"error: {exc}"
+
+    overall = "ok" if db_status == "ok" and redis_status == "ok" else "degraded"
+    return {
+        "status": overall,
+        "mock": MOCK_MODE,
+        "model": EMBEDDING_MODEL,
+        "db": db_status,
+        "redis": redis_status,
+    }
 
 
 @app.post(

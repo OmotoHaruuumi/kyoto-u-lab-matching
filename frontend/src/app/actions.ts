@@ -24,11 +24,13 @@ export type SearchResponse = {
   results: LabResult[];
 };
 
+const SEARCH_API_URL = process.env.SEARCH_API_URL ?? "http://localhost:8000";
+
 export async function searchLabs(query: string): Promise<SearchResponse | { error: string }> {
   if (!query) return { query: "", results: [] };
 
   try {
-    const res = await fetch(`http://localhost:8000/api/v1/search?q=${encodeURIComponent(query)}&limit=10`, {
+    const res = await fetch(`${SEARCH_API_URL}/api/v1/search?q=${encodeURIComponent(query)}&limit=10`, {
       method: "GET",
       // Set to no-store to ensure we do dynamic fetching
       cache: "no-store", 
