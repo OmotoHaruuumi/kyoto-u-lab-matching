@@ -184,6 +184,11 @@ function EmptyState({ query }: { query: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Pagination constants
+// ---------------------------------------------------------------------------
+const RESULTS_PER_PAGE = 6;
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 export default function SearchPage() {
@@ -194,6 +199,13 @@ export default function SearchPage() {
   const [hasSearched, setHasSearched] = useState(false);
   const [lastQuery, setLastQuery] = useState("");
   const [selectedLab, setSelectedLab] = useState<LabResult | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(results.length / RESULTS_PER_PAGE));
+  const pagedResults = results.slice(
+    (currentPage - 1) * RESULTS_PER_PAGE,
+    currentPage * RESULTS_PER_PAGE,
+  );
 
   const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -203,6 +215,7 @@ export default function SearchPage() {
     setError(null);
     setHasSearched(true);
     setLastQuery(query.trim());
+    setCurrentPage(1);
 
     try {
       const resp = await searchLabs(query);
@@ -298,7 +311,7 @@ export default function SearchPage() {
           {/* Results grid */}
           {!isLoading && results.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {results.map((lab) => (
+              {pagedResults.map((lab) => (
                 <div
                   key={lab.lab_id}
                   className="group relative bg-[#1a2333]/80 backdrop-blur-xl border border-white/10 rounded-3xl p-8 hover:border-indigo-400/50 transition-all duration-300 hover:shadow-[0_0_30px_-5px_rgba(99,102,241,0.3)] hover:-translate-y-1"
@@ -389,6 +402,29 @@ export default function SearchPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Pagination controls */}
+          {!isLoading && results.length > RESULTS_PER_PAGE && (
+            <div className="mt-10 flex items-center justify-center gap-4">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-colors text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                前へ
+              </button>
+              <span className="text-slate-400 text-sm">
+                {currentPage} / {totalPages} ページ
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-colors text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                次へ
+              </button>
             </div>
           )}
         </div>

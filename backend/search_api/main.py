@@ -80,8 +80,18 @@ CHUNK_WEIGHTS: dict[str, float] = {
     "research_theme": float(os.environ.get("CHUNK_WEIGHT_RESEARCH_THEME", "1.0")),
 }
 
+# Cache
+CACHE_TTL_SECONDS: int = int(os.environ.get("SEARCH_CACHE_TTL", "3600"))
+
 # Query rewriting
 QUERY_REWRITE_ENABLED: bool = os.environ.get("QUERY_REWRITE_ENABLED", "true").lower() == "true"
+
+# Redis client (shared across requests; None if Redis is unavailable)
+_redis_client: aioredis.Redis | None = None
+try:
+    _redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=3)
+except Exception as _redis_init_err:
+    logger.warning(f"Redis client init failed — caching disabled: {_redis_init_err}")
 
 # Gemini client for query rewriting
 _genai_client: google_genai.Client | None = None
@@ -284,6 +294,17 @@ async def search(
     """
     logger.info(f"Search query='{q}' limit={limit}")
 
+    # 0. Redis cache lookup
+    cache_key = f"search:{q}:{limit}"
+    if _redis_client is not None:
+        try:
+            cached = await _redis_client.get(cache_key)
+            if cached is not None:
+                logger.info(f"Cache hit for key='{cache_key}'")
+                return SearchResponse.model_validate_json(cached)
+        except Exception as _cache_err:
+            logger.warning(f"Redis cache read failed: {_cache_err}")
+
     # 1. Rewrite query into bilingual academic keywords
     embed_text, rewritten = await rewrite_query(q)
 
@@ -296,9 +317,6 @@ async def search(
         .order_by(EmbeddingChunk.embedding.cosine_distance(query_vector))
         .limit(CANDIDATE_LIMIT)
     )
-    res_vector = await db.execute(stmt_vector)
-    vector_rows = res_vector.all()
-    vector_ranks = {row.id: rank for rank, row in enumerate(vector_rows, start=1)}
 
     # 4. Keyword Search — use original query tokens (not expanded) to avoid noise
     kw_conditions = _keyword_conditions(q)
@@ -307,6 +325,10 @@ async def search(
         .where(or_(*kw_conditions))
         .limit(CANDIDATE_LIMIT)
     )
+
+    res_vector = await db.execute(stmt_vector)
+    vector_rows = res_vector.all()
+    vector_ranks = {row.id: rank for rank, row in enumerate(vector_rows, start=1)}
     res_keyword = await db.execute(stmt_keyword)
     keyword_rows = res_keyword.all()
     keyword_ranks = {row.id: rank for rank, row in enumerate(keyword_rows, start=1)}
@@ -339,7 +361,7 @@ async def search(
         lab_scores[lid] = lab_scores.get(lid, 0.0) + weighted_score
         lab_matched_chunks.setdefault(lid, []).append(
             ChunkMatch(
-                chunk_text=chunk.chunk_text,
+                chunk_text=chunk.chunk_text[:300],
                 source_type=chunk.source_type,
                 combined_score=weighted_score,
             )
@@ -377,4 +399,13 @@ async def search(
         if (lab := labs_dict.get(lid))
     ]
 
-    return SearchResponse(query=q, rewritten_query=rewritten, results=results)
+    response = SearchResponse(query=q, rewritten_query=rewritten, results=results)
+
+    # Store in Redis cache
+    if _redis_client is not None:
+        try:
+            await _redis_client.set(cache_key, response.model_dump_json(), ex=CACHE_TTL_SECONDS)
+        except Exception as _cache_write_err:
+            logger.warning(f"Redis cache write failed: {_cache_write_err}")
+
+    return response

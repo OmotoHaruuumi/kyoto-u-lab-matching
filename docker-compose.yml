@@ -157,6 +157,9 @@ services:
         condition: service_healthy
       embedding_api:
         condition: service_healthy
+    volumes:
+      - ./crawler/urls.csv:/app/crawler/urls.csv
+      - ./crawler/index_urls.txt:/app/crawler/index_urls.txt
     networks:
       - backend_net
     profiles:

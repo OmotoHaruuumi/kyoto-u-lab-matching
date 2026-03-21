@@ -147,12 +147,11 @@ class EmbeddingChunk(Base):
     lab: Mapped[Lab] = relationship("Lab", back_populates="embedding_chunks")
 
     __table_args__ = (
-        # IVFFlat index for approximate nearest-neighbour search (cosine)
         Index(
-            "ix_embedding_chunks_embedding_cosine",
+            "ix_embedding_chunks_embedding_hnsw",
             "embedding",
-            postgresql_using="ivfflat",
-            postgresql_with={"lists": 100},
+            postgresql_using="hnsw",
+            postgresql_with={"m": 16, "ef_construction": 64},
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
     )

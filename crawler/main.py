@@ -9,7 +9,7 @@ sys.path.append(".")
 
 from backend.shared.database import async_session_maker
 from crawler.extractor import extract_lab_data, select_subpages
-from crawler.loader import store_lab_data
+from crawler.loader import check_url_crawled, store_lab_data
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -70,6 +70,11 @@ async def crawl_lab_webpage(url: str):
     5. Save to database
     """
     logger.info(f"Starting crawl for {url}")
+
+    async with async_session_maker() as session:
+        if await check_url_crawled(session, url):
+            logger.info(f"Already crawled, skipping: {url}")
+            return
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
