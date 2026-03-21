@@ -110,22 +110,29 @@ async def store_lab_data(session: AsyncSession, url: str, raw_text: str, data: L
     )
     session.add(ds)
 
-    # 6. Generate Embeddings and create EmissionChunks
+    # 6. Generate Embeddings and create EmbeddingChunks
     chunks_to_embed = []
-    
-    # Lab description chunk
-    desc_text = f"【研究室紹介】\n{lab.name} ({lab.department or ''} {lab.faculty or ''})\n{lab.description or ''}\nキーワード: {', '.join(lab.keywords or [])}"
-    chunks_to_embed.append({"text": desc_text, "source": "lab_description"})
 
-    # Professor chunks
-    for p in data.professors:
-         p_text = f"【教員情報】\n{p.title or ''} {p.name}\n所属: {lab.name}"
-         chunks_to_embed.append({"text": p_text, "source": "professor_profile"})
+    # Lab description + vision + signature_research chunk
+    sig_research_text = "\n".join(f"- {s}" for s in (data.signature_research or []))
+    desc_text = (
+        f"【研究室紹介】\n"
+        f"{lab.name} ({lab.department or ''} {lab.faculty or ''})\n"
+        f"{lab.description or ''}\n"
+        f"\n【研究ビジョン】\n{data.vision or ''}\n"
+        f"\n【特徴的な研究】\n{sig_research_text}\n"
+        f"\nキーワード: {', '.join(lab.keywords or [])}"
+    )
+    chunks_to_embed.append({"text": desc_text, "source": "lab_description"})
 
     # Research Theme chunks
     for t in data.themes:
-         t_text = f"【研究テーマ】\n{t.title}\n{t.description or ''}"
-         chunks_to_embed.append({"text": t_text, "source": "research_theme"})
+        t_text = (
+            f"【研究テーマ】\n{t.title}\n"
+            f"{t.description or ''}\n"
+            f"アプローチ: {t.approach or ''}"
+        )
+        chunks_to_embed.append({"text": t_text, "source": "research_theme"})
 
     texts = [c["text"] for c in chunks_to_embed]
     vectors = await get_embeddings(texts)
