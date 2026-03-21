@@ -128,13 +128,17 @@ Your goal is to capture what makes this laboratory DISTINCTIVE — not generic f
 ## Fields to extract:
 
 **name / name_en**: Official lab name in Japanese and English (extract both if present).
+- Must be the actual laboratory name (e.g., "神谷研究室", "Kamitani Lab", "Brain Information Communication Research Laboratory").
+- Do NOT use a motto, tagline, catchphrase, or mission statement (e.g., "Externalizing the mind" is a tagline, not a lab name).
+- Look for it in the page title, site header, logo text, or explicit "〇〇研究室" / "〇〇 Lab" / "〇〇 Laboratory" patterns.
 
 **department / faculty**: Affiliation within Kyoto University.
 
 **description**:
 - Write 3–5 sentences capturing what specific problems this lab tackles, how they approach them, and what distinguishes them from other labs in the same field.
-- IMPORTANT: Do NOT copy or quote the introductory paragraph verbatim. Synthesize information from across all provided pages (research themes, paper titles, project descriptions, etc.) and write in your own words.
+- IMPORTANT: Do NOT copy or quote mottos, taglines, or catchphrases (e.g., "Externalizing the mind" is a tagline — ignore it). Synthesize information from research themes, paper titles, project descriptions, and other substantive content across all provided pages.
 - Avoid vague statements like "conducts cutting-edge research in X". Be specific (e.g., "Develops sparse Bayesian methods for real-time decoding of neural signals to restore motor function, implemented on custom FPGA hardware").
+- If the page has little text, use whatever research theme or paper title information is available rather than falling back to a tagline.
 
 **vision**:
 - The lab's stated research philosophy, mission, or ultimate goal — WHY this lab exists and what it ultimately aims to achieve.

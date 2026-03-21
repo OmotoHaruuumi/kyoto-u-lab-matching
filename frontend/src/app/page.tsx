@@ -1,7 +1,106 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { searchLabs, LabResult } from "./actions";
+
+// ---------------------------------------------------------------------------
+// Detail modal
+// ---------------------------------------------------------------------------
+function DetailModal({ lab, onClose }: { lab: LabResult; onClose: () => void }) {
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-[#111827] border border-white/10 rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-5 right-5 text-slate-400 hover:text-white transition-colors"
+          aria-label="閉じる"
+        >
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
+        <div className="p-8">
+          {/* Header */}
+          <h2 className="text-2xl font-bold text-white mb-1 pr-8">{lab.name}</h2>
+          {lab.name_en && <p className="text-sm text-slate-400 mb-3">{lab.name_en}</p>}
+          <div className="flex flex-wrap gap-2 text-xs text-cyan-200/70 mb-6">
+            {lab.department && <span>{lab.department}</span>}
+            {lab.faculty && <span>• {lab.faculty}</span>}
+          </div>
+
+          {/* Description */}
+          {lab.description && (
+            <div className="mb-6">
+              <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2 font-semibold">研究室紹介</h3>
+              <p className="text-slate-300 text-sm leading-relaxed">{lab.description}</p>
+            </div>
+          )}
+
+          {/* Keywords — all of them */}
+          {lab.keywords && lab.keywords.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2 font-semibold">キーワード</h3>
+              <div className="flex flex-wrap gap-2">
+                {lab.keywords.map((kw, idx) => (
+                  <span key={idx} className="px-3 py-1 text-xs rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <hr className="border-white/5 my-6" />
+
+          {/* Match highlights — all chunks */}
+          <div className="mb-6">
+            <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-3 font-semibold">マッチ理由</h3>
+            <ul className="space-y-3">
+              {lab.matched_chunks.map((chunk, idx) => (
+                <li key={idx} className="text-xs bg-black/20 p-3 rounded-lg border border-white/5">
+                  <span className="inline-block px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 mb-1 text-[10px]">
+                    {chunk.source_type}
+                  </span>
+                  <p className="text-slate-300 italic whitespace-pre-wrap">&quot;{chunk.chunk_text}&quot;</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Link */}
+          {lab.lab_url && (
+            <a
+              href={lab.lab_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center text-sm font-medium text-cyan-400 hover:text-cyan-300 transition-colors"
+            >
+              研究室サイトへ
+              <svg className="ml-1.5 w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Skeleton card shown while search is in progress
@@ -78,8 +177,9 @@ export default function SearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [lastQuery, setLastQuery] = useState("");
+  const [selectedLab, setSelectedLab] = useState<LabResult | null>(null);
 
-  const handleSearch = async (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!query.trim()) return;
 
@@ -106,6 +206,11 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0f1c] text-slate-200 font-sans selection:bg-indigo-500/30">
+      {/* Detail modal */}
+      {selectedLab && (
+        <DetailModal lab={selectedLab} onClose={() => setSelectedLab(null)} />
+      )}
+
       {/* Dynamic Background */}
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-indigo-900/40 blur-[120px]" />
@@ -205,7 +310,7 @@ export default function SearchPage() {
                       {lab.description}
                     </div>
 
-                    {/* Keywords */}
+                    {/* Keywords (preview) */}
                     {lab.keywords && lab.keywords.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-6">
                         {lab.keywords.slice(0, 4).map((kw, idx) => (
@@ -223,7 +328,7 @@ export default function SearchPage() {
 
                     <hr className="border-white/5 my-4" />
 
-                    {/* Match highlights */}
+                    {/* Match highlights (preview) */}
                     <div className="mt-2">
                       <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-3 font-semibold">マッチ理由</h3>
                       <ul className="space-y-3">
@@ -238,8 +343,9 @@ export default function SearchPage() {
                       </ul>
                     </div>
 
-                    {lab.lab_url && (
-                      <div className="mt-8">
+                    {/* Footer */}
+                    <div className="mt-8 flex items-center justify-between">
+                      {lab.lab_url ? (
                         <a
                           href={lab.lab_url}
                           target="_blank"
@@ -251,8 +357,14 @@ export default function SearchPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                           </svg>
                         </a>
-                      </div>
-                    )}
+                      ) : <span />}
+                      <button
+                        onClick={() => setSelectedLab(lab)}
+                        className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors font-medium"
+                      >
+                        詳細を見る →
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
