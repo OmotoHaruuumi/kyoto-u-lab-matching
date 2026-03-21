@@ -112,7 +112,8 @@ class LabResult(BaseModel):
     faculty: str | None
     lab_url: str | None
     description: str | None
-    keywords: list[str] | None
+    keywords_primary: list[str] | None
+    keywords_secondary: list[str] | None
     matched_chunks: list[ChunkMatch]
     total_score: float
 
@@ -366,7 +367,8 @@ async def search(
             faculty=lab.faculty,
             lab_url=lab.lab_url,
             description=lab.description,
-            keywords=lab.keywords,
+            keywords_primary=lab.keywords_primary,
+            keywords_secondary=lab.keywords_secondary,
             matched_chunks=lab_matched_chunks[lab.id][:3],
             total_score=lab_scores[lab.id],
         )

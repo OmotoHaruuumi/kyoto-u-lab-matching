@@ -79,7 +79,8 @@ async def store_lab_data(session: AsyncSession, url: str, raw_text: str, data: L
         faculty=data.faculty,
         lab_url=url,
         description=data.description,
-        keywords=data.keywords,
+        keywords_primary=data.keywords_primary,
+        keywords_secondary=data.keywords_secondary,
     )
     session.add(lab)
     await session.flush() # Ensure we have lab.id
@@ -115,13 +116,16 @@ async def store_lab_data(session: AsyncSession, url: str, raw_text: str, data: L
 
     # Lab description + vision + signature_research chunk
     sig_research_text = "\n".join(f"- {s}" for s in (data.signature_research or []))
+    primary_kw_text = " / ".join(data.keywords_primary or [])
+    secondary_kw_text = ", ".join(data.keywords_secondary or [])
     desc_text = (
         f"【研究室紹介】\n"
         f"{lab.name} ({lab.department or ''} {lab.faculty or ''})\n"
         f"{lab.description or ''}\n"
         f"\n【研究ビジョン】\n{data.vision or ''}\n"
         f"\n【特徴的な研究】\n{sig_research_text}\n"
-        f"\nキーワード: {', '.join(lab.keywords or [])}"
+        f"\n【主要研究領域】{primary_kw_text}\n"
+        f"【関連キーワード】{secondary_kw_text}"
     )
     chunks_to_embed.append({"text": desc_text, "source": "lab_description"})
 

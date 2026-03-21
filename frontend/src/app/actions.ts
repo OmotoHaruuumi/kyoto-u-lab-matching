@@ -14,7 +14,8 @@ export type LabResult = {
   faculty: string | null;
   lab_url: string | null;
   description: string | null;
-  keywords: string[] | null;
+  keywords_primary: string[] | null;
+  keywords_secondary: string[] | null;
   matched_chunks: ChunkMatch[];
   total_score: number;
 };

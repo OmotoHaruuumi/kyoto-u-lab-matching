@@ -51,19 +51,35 @@ function DetailModal({ lab, onClose }: { lab: LabResult; onClose: () => void }) 
             </div>
           )}
 
-          {/* Keywords — all of them */}
-          {lab.keywords && lab.keywords.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2 font-semibold">キーワード</h3>
-              <div className="flex flex-wrap gap-2">
-                {lab.keywords.map((kw, idx) => (
-                  <span key={idx} className="px-3 py-1 text-xs rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                    {kw}
-                  </span>
-                ))}
-              </div>
+          {/* Keywords — tiered display */}
+          {(lab.keywords_primary?.length || lab.keywords_secondary?.length) ? (
+            <div className="mb-6 space-y-3">
+              {lab.keywords_primary && lab.keywords_primary.length > 0 && (
+                <div>
+                  <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2 font-semibold">主要研究領域</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {lab.keywords_primary.map((kw, idx) => (
+                      <span key={idx} className="px-3 py-1 text-xs rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-500/40 font-medium">
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {lab.keywords_secondary && lab.keywords_secondary.length > 0 && (
+                <div>
+                  <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2 font-semibold">関連キーワード</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {lab.keywords_secondary.map((kw, idx) => (
+                      <span key={idx} className="px-3 py-1 text-xs rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          ) : null}
 
           <hr className="border-white/5 my-6" />
 
@@ -311,20 +327,25 @@ export default function SearchPage() {
                     </div>
 
                     {/* Keywords (preview) */}
-                    {lab.keywords && lab.keywords.length > 0 && (
+                    {(lab.keywords_primary?.length || lab.keywords_secondary?.length) ? (
                       <div className="flex flex-wrap gap-2 mb-6">
-                        {lab.keywords.slice(0, 4).map((kw, idx) => (
-                          <span key={idx} className="px-3 py-1 text-xs rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                        {(lab.keywords_primary || []).map((kw, idx) => (
+                          <span key={`p-${idx}`} className="px-3 py-1 text-xs rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-500/40 font-medium">
                             {kw}
                           </span>
                         ))}
-                        {lab.keywords.length > 4 && (
+                        {(lab.keywords_secondary || []).slice(0, 3).map((kw, idx) => (
+                          <span key={`s-${idx}`} className="px-3 py-1 text-xs rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                            {kw}
+                          </span>
+                        ))}
+                        {(lab.keywords_secondary?.length ?? 0) > 3 && (
                           <span className="px-3 py-1 text-xs rounded-full bg-slate-800/50 text-slate-400 border border-slate-700/50">
-                            +{lab.keywords.length - 4}
+                            +{(lab.keywords_secondary?.length ?? 0) - 3}
                           </span>
                         )}
                       </div>
-                    )}
+                    ) : null}
 
                     <hr className="border-white/5 my-4" />
 

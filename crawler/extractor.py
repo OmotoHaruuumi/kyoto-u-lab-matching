@@ -38,7 +38,8 @@ class LabExtractionResult(BaseModel):
     description: Optional[str] = None        # Synthesized description of what makes this lab unique
     vision: Optional[str] = None             # Lab's research philosophy / mission / ultimate goal
     signature_research: list[str] = []       # Characteristic / flagship research topics specific to this lab
-    keywords: list[str]
+    keywords_primary: list[str] = []         # Up to 3 identity-defining keywords
+    keywords_secondary: list[str] = []       # Up to 7 important but non-core keywords
     professors: list[ProfessorData]
     themes: list[ResearchThemeData]
 
@@ -151,7 +152,13 @@ Your goal is to capture what makes this laboratory DISTINCTIVE — not generic f
 - Draw from paper titles, project names, and theme descriptions — these are the most reliable sources.
 - Be concrete and specific (e.g., "マルチモーダル感情認識のためのトランスフォーマー適応" or "topology-aware routing in delay-tolerant networks"), not generic field names like "machine learning" or "robotics".
 
-**keywords**: 5–15 specific technical terms, methods, or application areas. Prefer domain-specific terms over broad fields.
+**keywords_primary（最大3つ）**:
+- この研究室のアイデンティティを表す最重要キーワード。「○○を研究している研究室です」の○○にあたるもの。
+- 他の研究室との差別化になるもの。「AI」「機械学習」「深層学習」のような汎用語ではなく、より具体的な分野名（例: 「脳情報デコーディング」「計算言語学」「量子エラー訂正」）を選ぶ。
+
+**keywords_secondary（最大7つ）**:
+- 研究室が取り組む重要なトピックだが、他の研究室でも扱いうるもの。primaryより具体的・多様でよい。
+- ツール名（PyTorch等）や極めて汎用的な単語は含めない。
 
 **professors**: All faculty members with title (教授/准教授/講師/Professor/Associate Professor etc.) separated from name.
 

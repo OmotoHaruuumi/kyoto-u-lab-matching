@@ -48,7 +48,8 @@ class Lab(Base):
     faculty: Mapped[Optional[str]] = mapped_column(String(256))
     lab_url: Mapped[Optional[str]] = mapped_column(Text)
     description: Mapped[Optional[str]] = mapped_column(Text)
-    keywords: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text))
+    keywords_primary: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text))
+    keywords_secondary: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
