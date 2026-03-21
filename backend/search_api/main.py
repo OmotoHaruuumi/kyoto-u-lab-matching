@@ -76,6 +76,7 @@ CANDIDATE_LIMIT: int = int(os.environ.get("SEARCH_CANDIDATE_LIMIT", "100"))
 # Chunk-type score multipliers
 CHUNK_WEIGHTS: dict[str, float] = {
     "lab_description": float(os.environ.get("CHUNK_WEIGHT_LAB_DESCRIPTION", "1.5")),
+    "signature_research": float(os.environ.get("CHUNK_WEIGHT_SIGNATURE_RESEARCH", "1.5")),
     "research_theme": float(os.environ.get("CHUNK_WEIGHT_RESEARCH_THEME", "1.0")),
 }
 

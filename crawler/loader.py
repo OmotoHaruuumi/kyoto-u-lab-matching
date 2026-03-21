@@ -129,6 +129,10 @@ async def store_lab_data(session: AsyncSession, url: str, raw_text: str, data: L
     )
     chunks_to_embed.append({"text": desc_text, "source": "lab_description"})
 
+    # Signature Research chunks
+    for sr in (data.signature_research or []):
+        chunks_to_embed.append({"text": f"【特徴的な研究】\n{sr}", "source": "signature_research"})
+
     # Research Theme chunks
     for t in data.themes:
         t_text = (

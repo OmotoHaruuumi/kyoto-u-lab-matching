@@ -170,7 +170,7 @@ Your goal is to capture what makes this laboratory DISTINCTIVE — not generic f
 ## Important rules:
 - Synthesize across all page sections — do not just extract from the first section.
 - Extract at the same level of detail whether the source is Japanese or English.
-- Output field values in the language of the source text. Do not translate.
+- Output all text fields (description, vision, signature_research, themes title/description/approach) in Japanese, regardless of the source language. Translate from English if necessary.
 - Do not fabricate information not present in the text.
 - Separate professor titles from names (e.g., name="山田 太郎", title="教授").
 
