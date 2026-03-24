@@ -135,6 +135,23 @@ class SearchResponse(BaseModel):
     results: list[LabResult]
 
 
+class LabListItem(BaseModel):
+    lab_id: int
+    name: str
+    name_en: str | None
+    department: str | None
+    faculty: str | None
+    lab_url: str | None
+    description: str | None
+    keywords_primary: list[str] | None
+    keywords_secondary: list[str] | None
+
+
+class LabListResponse(BaseModel):
+    total: int
+    labs: list[LabListItem]
+
+
 # ---------------------------------------------------------------------------
 # Query rewriting
 # ---------------------------------------------------------------------------
@@ -270,6 +287,44 @@ async def health() -> dict[str, Any]:
         "query_rewrite_enabled": QUERY_REWRITE_ENABLED and _genai_client is not None,
         "chunk_weights": CHUNK_WEIGHTS,
     }
+
+
+@app.get(
+    "/api/v1/labs",
+    response_model=LabListResponse,
+    summary="List all labs with optional filtering",
+    tags=["labs"],
+)
+async def list_labs(
+    department: str | None = Query(None, description="Filter by department (partial match)"),
+    faculty: str | None = Query(None, description="Filter by faculty (partial match)"),
+    db: AsyncSession = Depends(get_db),
+) -> LabListResponse:
+    stmt = select(Lab)
+    if department:
+        stmt = stmt.where(Lab.department.ilike(f"%{department}%"))
+    if faculty:
+        stmt = stmt.where(Lab.faculty.ilike(f"%{faculty}%"))
+    stmt = stmt.order_by(Lab.department, Lab.name)
+    res = await db.execute(stmt)
+    labs = res.scalars().all()
+    return LabListResponse(
+        total=len(labs),
+        labs=[
+            LabListItem(
+                lab_id=lab.id,
+                name=lab.name,
+                name_en=lab.name_en,
+                department=lab.department,
+                faculty=lab.faculty,
+                lab_url=lab.lab_url,
+                description=lab.description,
+                keywords_primary=lab.keywords_primary,
+                keywords_secondary=lab.keywords_secondary,
+            )
+            for lab in labs
+        ],
+    )
 
 
 @app.get(

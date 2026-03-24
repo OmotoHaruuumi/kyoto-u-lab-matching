@@ -20,12 +20,40 @@ export type LabResult = {
   total_score: number;
 };
 
+export type LabListItem = {
+  lab_id: number;
+  name: string;
+  name_en: string | null;
+  department: string | null;
+  faculty: string | null;
+  lab_url: string | null;
+  description: string | null;
+  keywords_primary: string[] | null;
+  keywords_secondary: string[] | null;
+};
+
 export type SearchResponse = {
   query: string;
   results: LabResult[];
 };
 
+export type LabListResponse = {
+  total: number;
+  labs: LabListItem[];
+};
+
 const SEARCH_API_URL = process.env.SEARCH_API_URL ?? "http://localhost:8000";
+
+export async function fetchAllLabs(): Promise<LabListResponse | { error: string }> {
+  try {
+    const res = await fetch(`${SEARCH_API_URL}/api/v1/labs`, { cache: "no-store" });
+    if (!res.ok) return { error: "Failed to fetch lab list." };
+    return await res.json();
+  } catch (err: any) {
+    console.error("Fetch error:", err);
+    return { error: "Could not connect to the search API." };
+  }
+}
 
 export async function searchLabs(query: string): Promise<SearchResponse | { error: string }> {
   if (!query) return { query: "", results: [] };

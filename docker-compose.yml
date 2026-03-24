@@ -160,6 +160,8 @@ services:
     volumes:
       - ./crawler/urls.csv:/app/crawler/urls.csv
       - ./crawler/index_urls.txt:/app/crawler/index_urls.txt
+      - ./crawler/categories.json:/app/crawler/categories.json
+      - ./crawler/normalize_categories.py:/app/crawler/normalize_categories.py
     networks:
       - backend_net
     profiles:

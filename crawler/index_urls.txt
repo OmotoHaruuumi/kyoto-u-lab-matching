@@ -16,3 +16,40 @@ https://www.i.kyoto-u.ac.jp/course/sys/
 https://www.i.kyoto-u.ac.jp/course/cce/
 # データ科学コース
 https://www.i.kyoto-u.ac.jp/course/ds/
+
+
+# ========== 京都大学大学院 工学研究科 ==========
+# 社会基盤工学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/ce
+# 都市社会工学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/um
+# 地球工学専攻（環境）
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/env
+# 建築学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/ar
+# 機械理工学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/me
+# マイクロエンジニアリング専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/mi
+# 航空宇宙工学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/aa
+# 原子核工学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/ne
+# 材料工学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/ms
+# 電気工学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/ee
+# 電子工学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/es
+# 通信情報システム専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/mc
+# 電気電子工学専攻（融合）
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/eh
+# 分子工学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/ml
+# 高分子化学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/pc
+# 合成・生物化学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/sc
+# 化学工学専攻
+https://www.t.kyoto-u.ac.jp/ja/divisions/departments/ch

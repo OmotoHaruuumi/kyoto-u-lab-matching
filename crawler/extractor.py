@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 from typing import Optional
 from google import genai
@@ -14,6 +15,26 @@ if not api_key:
     logger.warning("GEMINI_API_KEY not found in environment.")
 
 client = genai.Client(api_key=api_key) if api_key else None
+
+# Load categories
+_CATEGORIES_PATH = Path(__file__).parent / "categories.json"
+try:
+    CATEGORIES: dict[str, list[str]] = json.loads(_CATEGORIES_PATH.read_text(encoding="utf-8"))
+except Exception:
+    CATEGORIES = {}
+    logger.warning("categories.json not found or invalid — department/faculty extraction will be unguided.")
+
+def _build_categories_prompt() -> str:
+    if not CATEGORIES:
+        return ""
+    lines = ["以下のリストから最も近いものを選んでください。リストにない場合は null を返してください。"]
+    lines.append("```")
+    for faculty, depts in CATEGORIES.items():
+        lines.append(f"{faculty}:")
+        for d in depts:
+            lines.append(f"  - {d}")
+    lines.append("```")
+    return "\n".join(lines)
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas for Structured Output
@@ -133,7 +154,9 @@ Your goal is to capture what makes this laboratory DISTINCTIVE — not generic f
 - Do NOT use a motto, tagline, catchphrase, or mission statement (e.g., "Externalizing the mind" is a tagline, not a lab name).
 - Look for it in the page title, site header, logo text, or explicit "〇〇研究室" / "〇〇 Lab" / "〇〇 Laboratory" patterns.
 
-**department / faculty**: Affiliation within Kyoto University.
+**faculty**: 所属する研究科・研究所名。**department**: 専攻・コース名。
+{_build_categories_prompt()}
+リストにない研究科・専攻の場合は null を返してください。
 
 **description**:
 - Write 3–5 sentences capturing what specific problems this lab tackles, how they approach them, and what distinguishes them from other labs in the same field.

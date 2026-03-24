@@ -25,3 +25,6 @@ build/
 # IDE / Editor
 .vscode/
 .idea/
+
+# DB のデータを移行するファイル
+*.dump
