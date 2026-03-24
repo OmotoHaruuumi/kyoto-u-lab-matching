@@ -44,6 +44,16 @@ export type LabListResponse = {
 
 const SEARCH_API_URL = process.env.SEARCH_API_URL ?? "http://localhost:8000";
 
+export async function fetchCategories(): Promise<Record<string, string[]>> {
+  try {
+    const res = await fetch(`${SEARCH_API_URL}/api/v1/categories`, { cache: "no-store" });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
 export async function fetchAllLabs(): Promise<LabListResponse | { error: string }> {
   try {
     const res = await fetch(`${SEARCH_API_URL}/api/v1/labs`, { cache: "no-store" });

@@ -69,9 +69,9 @@ async def main(dry_run: bool = False) -> None:
             print(f"    faculty:    {lab.faculty!r} -> {fac!r}")
             print(f"    department: {lab.department!r} -> {dept!r}")
 
-        print(f"\n=== 未マッチ（手動設定が必要）: {len(unmatched)} 件 ===")
+        print(f"\n=== 未マッチ（categories.json にないため null に設定）: {len(unmatched)} 件 ===")
         for lab in unmatched:
-            print(f"  [{lab.id}] {lab.name} | faculty={lab.faculty!r} | department={lab.department!r}")
+            print(f"  [{lab.id}] {lab.name} | faculty={lab.faculty!r} -> None | department={lab.department!r} -> None")
 
         if dry_run:
             print("\n[dry-run] DB は更新しませんでした。")
@@ -83,8 +83,12 @@ async def main(dry_run: bool = False) -> None:
             if dept:
                 lab.department = dept
 
+        for lab in unmatched:
+            lab.faculty = None
+            lab.department = None
+
         await session.commit()
-        print(f"\n{len(matched)} 件を更新しました。")
+        print(f"\nマッチ: {len(matched)} 件を正規化、未マッチ: {len(unmatched)} 件を null に設定しました。")
 
 
 if __name__ == "__main__":

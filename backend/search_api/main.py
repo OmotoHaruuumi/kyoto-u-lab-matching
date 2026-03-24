@@ -289,6 +289,18 @@ async def health() -> dict[str, Any]:
     }
 
 
+CATEGORIES_PATH = os.environ.get("CATEGORIES_PATH", "/app/crawler/categories.json")
+
+
+@app.get("/api/v1/categories", tags=["labs"])
+async def get_categories() -> dict[str, list[str]]:
+    try:
+        with open(CATEGORIES_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+
 @app.get(
     "/api/v1/labs",
     response_model=LabListResponse,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { searchLabs, fetchAllLabs, LabResult, LabListItem } from "./actions";
+import { searchLabs, fetchAllLabs, fetchCategories, LabResult, LabListItem } from "./actions";
 
 // ---------------------------------------------------------------------------
 // Detail modal
@@ -331,8 +331,10 @@ export default function SearchPage() {
   // List state
   const [allLabs, setAllLabs] = useState<LabListItem[]>([]);
   const [listLoading, setListLoading] = useState(false);
+  const [filterFaculty, setFilterFaculty] = useState("");
   const [filterDept, setFilterDept] = useState("");
   const [listPage, setListPage] = useState(1);
+  const [categories, setCategories] = useState<Record<string, string[]>>({});
 
   const totalPages = Math.max(1, Math.ceil(results.length / RESULTS_PER_PAGE));
   const pagedResults = results.slice(
@@ -340,33 +342,31 @@ export default function SearchPage() {
     currentPage * RESULTS_PER_PAGE,
   );
 
-  // Derived: unique departments for filter dropdown
-  const departments = useMemo(
-    () => [...new Set(allLabs.map((l) => l.department).filter(Boolean))].sort() as string[],
-    [allLabs],
-  );
+  // 選択中の研究科に対応する専攻リスト
+  const availableDepts = filterFaculty ? (categories[filterFaculty] ?? []) : [];
 
   // Filtered list
-  const filteredLabs = useMemo(
-    () => filterDept ? allLabs.filter((l) => l.department === filterDept) : allLabs,
-    [allLabs, filterDept],
-  );
+  const filteredLabs = useMemo(() => {
+    return allLabs.filter((l) => {
+      if (filterFaculty && l.faculty !== filterFaculty) return false;
+      if (filterDept && l.department !== filterDept) return false;
+      return true;
+    });
+  }, [allLabs, filterFaculty, filterDept]);
+
   const listTotalPages = Math.max(1, Math.ceil(filteredLabs.length / RESULTS_PER_PAGE));
   const pagedListLabs = filteredLabs.slice(
     (listPage - 1) * RESULTS_PER_PAGE,
     listPage * RESULTS_PER_PAGE,
   );
 
-  // Fetch all labs when switching to list tab
+  // Fetch all labs and categories when switching to list tab
   useEffect(() => {
     if (tab === "list" && allLabs.length === 0 && !listLoading) {
       setListLoading(true);
-      fetchAllLabs().then((res) => {
-        if ("error" in res) {
-          setAllLabs([]);
-        } else {
-          setAllLabs(res.labs);
-        }
+      Promise.all([fetchAllLabs(), fetchCategories()]).then(([labRes, cats]) => {
+        if (!("error" in labRes)) setAllLabs(labRes.labs);
+        setCategories(cats);
         setListLoading(false);
       });
     }
@@ -470,15 +470,27 @@ export default function SearchPage() {
           {tab === "list" && (
             <div className="w-full max-w-3xl flex flex-wrap gap-3 items-center">
               <select
-                value={filterDept}
-                onChange={(e) => { setFilterDept(e.target.value); setListPage(1); }}
+                value={filterFaculty}
+                onChange={(e) => { setFilterFaculty(e.target.value); setFilterDept(""); setListPage(1); }}
                 className="px-4 py-2.5 rounded-xl bg-[#111827] border border-white/10 text-slate-200 text-sm outline-none focus:border-indigo-500 transition-colors"
               >
-                <option value="">専攻・コース（すべて）</option>
-                {departments.map((d) => (
-                  <option key={d} value={d}>{d}</option>
+                <option value="">研究科（すべて）</option>
+                {Object.keys(categories).map((f) => (
+                  <option key={f} value={f}>{f}</option>
                 ))}
               </select>
+              {filterFaculty && (
+                <select
+                  value={filterDept}
+                  onChange={(e) => { setFilterDept(e.target.value); setListPage(1); }}
+                  className="px-4 py-2.5 rounded-xl bg-[#111827] border border-white/10 text-slate-200 text-sm outline-none focus:border-indigo-500 transition-colors"
+                >
+                  <option value="">専攻・コース（すべて）</option>
+                  {availableDepts.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              )}
               <span className="text-slate-500 text-sm">{filteredLabs.length} 件</span>
             </div>
           )}

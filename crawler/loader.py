@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -10,6 +12,48 @@ from backend.shared.models import EmbeddingChunk, Lab, Professor, ResearchTheme,
 from crawler.extractor import LabExtractionResult
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Category validation
+# ---------------------------------------------------------------------------
+_CATEGORIES_PATH = Path(__file__).parent / "categories.json"
+try:
+    _CATEGORIES: dict[str, list[str]] = json.loads(_CATEGORIES_PATH.read_text(encoding="utf-8"))
+except Exception:
+    _CATEGORIES = {}
+    logger.warning("categories.json not found — faculty/department will not be validated.")
+
+_FACULTY_SET = {f.lower(): f for f in _CATEGORIES}
+_DEPT_LOOKUP: dict[str, tuple[str, str]] = {
+    dept.lower(): (fac, dept)
+    for fac, depts in _CATEGORIES.items()
+    for dept in depts
+}
+
+
+def _normalize_category(faculty: Optional[str], department: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """Return canonical faculty/department from categories.json, or None if not found."""
+    if not _CATEGORIES:
+        return faculty, department
+
+    norm_faculty: Optional[str] = None
+    norm_dept: Optional[str] = None
+
+    if faculty:
+        for key, canonical in _FACULTY_SET.items():
+            if key in faculty.lower():
+                norm_faculty = canonical
+                break
+
+    if department:
+        for key, (fac, dept) in _DEPT_LOOKUP.items():
+            if key in department.lower():
+                norm_dept = dept
+                if norm_faculty is None:
+                    norm_faculty = fac
+                break
+
+    return norm_faculty, norm_dept
 
 EMBEDDING_API_URL = "http://embedding_api:8001/api/v1/embed"
 
@@ -71,12 +115,18 @@ async def store_lab_data(session: AsyncSession, url: str, raw_text: str, data: L
 
     logger.info(f"Saving lab data for: {data.name}")
 
-    # 2. Create Lab
+    # 2. Create Lab (validate faculty/department against categories.json)
+    norm_faculty, norm_dept = _normalize_category(data.faculty, data.department)
+    if data.faculty and not norm_faculty:
+        logger.warning(f"faculty {data.faculty!r} not in categories.json — set to null")
+    if data.department and not norm_dept:
+        logger.warning(f"department {data.department!r} not in categories.json — set to null")
+
     lab = Lab(
         name=data.name,
         name_en=data.name_en,
-        department=data.department,
-        faculty=data.faculty,
+        department=norm_dept,
+        faculty=norm_faculty,
         lab_url=url,
         description=data.description,
         keywords_primary=data.keywords_primary,

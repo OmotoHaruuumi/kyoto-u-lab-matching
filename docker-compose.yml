@@ -99,6 +99,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    volumes:
+      - ./crawler/categories.json:/app/crawler/categories.json:ro
     ports:
       - "8000:8000"
     depends_on:
