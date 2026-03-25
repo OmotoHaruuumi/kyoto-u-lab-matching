@@ -88,10 +88,20 @@ async def create_data_source(session: AsyncSession, url: str) -> DataSource:
     # Actually, DataSource requires lab_id. We'll create it after creating the lab.
     pass
 
-async def store_lab_data(session: AsyncSession, url: str, raw_text: str, data: LabExtractionResult) -> bool:
+async def store_lab_data(
+    session: AsyncSession,
+    url: str,
+    raw_text: str,
+    data: LabExtractionResult,
+    faculty_override: Optional[str] = None,
+    department_override: Optional[str] = None,
+) -> bool:
     """
     Store the extracted lab data into the DB, update data_source state,
     and generate vectors for search.
+
+    faculty_override / department_override: urls.csv から渡された確定値。
+    指定された場合は AI 抽出値より優先し、categories.json で正規化する。
     """
     # 1. Check idempotency: See if this exact URL is already in successful DataSource
     # First see if any lab has this URL and was successfully crawled
@@ -116,11 +126,19 @@ async def store_lab_data(session: AsyncSession, url: str, raw_text: str, data: L
     logger.info(f"Saving lab data for: {data.name}")
 
     # 2. Create Lab (validate faculty/department against categories.json)
-    norm_faculty, norm_dept = _normalize_category(data.faculty, data.department)
-    if data.faculty and not norm_faculty:
-        logger.warning(f"faculty {data.faculty!r} not in categories.json — set to null")
-    if data.department and not norm_dept:
-        logger.warning(f"department {data.department!r} not in categories.json — set to null")
+    # urls.csv からのオーバーライド値を優先、なければ AI 抽出値を使用
+    raw_faculty = faculty_override if faculty_override else data.faculty
+    raw_dept = department_override if department_override else data.department
+    if faculty_override:
+        logger.info(f"Using faculty override from CSV: {faculty_override!r}")
+    if department_override:
+        logger.info(f"Using department override from CSV: {department_override!r}")
+
+    norm_faculty, norm_dept = _normalize_category(raw_faculty, raw_dept)
+    if raw_faculty and not norm_faculty:
+        logger.warning(f"faculty {raw_faculty!r} not in categories.json — set to null")
+    if raw_dept and not norm_dept:
+        logger.warning(f"department {raw_dept!r} not in categories.json — set to null")
 
     lab = Lab(
         name=data.name,

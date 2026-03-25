@@ -60,7 +60,11 @@ def combine_page_texts(main_url: str, main_text: str, subpages: list[tuple[str, 
     return "\n\n".join(parts)
 
 
-async def crawl_lab_webpage(url: str):
+async def crawl_lab_webpage(
+    url: str,
+    faculty_override: str | None = None,
+    department_override: str | None = None,
+):
     """
     Main flow for crawling a single lab webpage:
     1. Fetch main page + extract internal links
@@ -113,7 +117,11 @@ async def crawl_lab_webpage(url: str):
     # 5. Store
     async with async_session_maker() as session:
         try:
-            success = await store_lab_data(session, url, combined_text, extracted_data)
+            success = await store_lab_data(
+                session, url, combined_text, extracted_data,
+                faculty_override=faculty_override,
+                department_override=department_override,
+            )
             if success:
                 logger.info(f"Pipeline complete for {url}.")
             else:
@@ -123,37 +131,43 @@ async def crawl_lab_webpage(url: str):
             logger.error(f"Database error while saving data for {url}: {e}", exc_info=True)
 
 
-def load_urls_from_csv(csv_path: str) -> list[str]:
-    """CSVファイルからURLリストを読み込む。"""
+def load_urls_from_csv(csv_path: str) -> list[dict]:
+    """CSVファイルから (url, faculty, department) のリストを読み込む。"""
     import csv as csv_module
-    urls = []
+    entries = []
     try:
         with open(csv_path, newline="", encoding="utf-8") as f:
             reader = csv_module.DictReader(f)
             for row in reader:
                 url = row.get("url", "").strip()
                 if url:
-                    urls.append(url)
-        logger.info(f"Loaded {len(urls)} URLs from {csv_path}")
+                    entries.append({
+                        "url": url,
+                        "faculty": row.get("faculty", "").strip(),
+                        "department": row.get("department", "").strip(),
+                    })
+        logger.info(f"Loaded {len(entries)} URLs from {csv_path}")
     except FileNotFoundError:
         logger.warning(f"CSV not found: {csv_path}. Using default URLs.")
-    return urls
+    return entries
 
 
 async def main():
     """CSVファイルからURLを読み込んでクロールする。CSVがなければデフォルトURLを使用。"""
     import os
     csv_path = os.path.join(os.path.dirname(__file__), "urls.csv")
-    target_urls = load_urls_from_csv(csv_path)
+    entries = load_urls_from_csv(csv_path)
 
-    if not target_urls:
+    if not entries:
         logger.info("Using fallback default URLs.")
-        target_urls = [
-            "https://nlp.ist.i.kyoto-u.ac.jp/",
-        ]
+        entries = [{"url": "https://nlp.ist.i.kyoto-u.ac.jp/", "faculty": "", "department": ""}]
 
-    for url in target_urls:
-        await crawl_lab_webpage(url)
+    for entry in entries:
+        await crawl_lab_webpage(
+            entry["url"],
+            faculty_override=entry["faculty"] or None,
+            department_override=entry["department"] or None,
+        )
 
 
 if __name__ == "__main__":
