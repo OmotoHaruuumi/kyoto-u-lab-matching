@@ -96,6 +96,29 @@ docker compose exec search_api python db/seed.py
 docker compose --profile crawler up crawler
 ```
 
+#### クロール対象とコース分類の運用（重要）
+
+コース・研究科の分類は **AI に推測させず、URL の出所で決定的に固定** する。手作業での修正を毎回繰り返さないための運用ルール：
+
+1. **`crawler/index_urls.txt`** が唯一の手動メンテ対象。コメントで研究科・コースを宣言し、その下に対象インデックスページURLを並べる。コース構成が変わった年度だけここを直す。
+   ```
+   # ========== 京都大学大学院 情報学研究科 ==========
+   # 知能情報学コース
+   https://www.i.kyoto-u.ac.jp/course/ist/
+   ```
+2. **`collect_urls.py`** を実行すると、各研究室URLに faculty / department を自動付与した **4列の `urls.csv`**（`url, source_page, faculty, department`）を生成する。`urls.csv` は常にこの4列で運用する（2列版で上書きしない）。
+3. クロール時、`loader.py` は **overrides.csv > urls.csv の faculty/department > AI抽出** の優先順位でコースを確定し、`categories.json` で正規化する。→ 分類はDBを手で直さなくても再現可能。
+4. インデックスに載らない / コースをまたぐ等の例外だけ **`crawler/overrides.csv`**（`url,faculty,department`）に書く。手修正がDBではなくファイルに残り、再クロールで自動再適用される。
+
+**再クロール（年度更新で既存データを上書き）するとき:**
+
+```bash
+# 既存の同一URLレコードを削除して入れ直す（force refresh）
+CRAWL_FORCE_REFRESH=true docker compose --profile crawler up crawler
+```
+
+> 既定（`CRAWL_FORCE_REFRESH` 未設定）ではクロール済みURLはスキップされる（冪等）。`true` のときだけ上書き更新する。
+
 ### 5. アクセス
 
 | サービス | URL |

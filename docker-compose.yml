@@ -154,6 +154,9 @@ services:
     container_name: kyoto_crawler
     env_file:
       - .env
+    environment:
+      # true で既存レコードを上書き更新する再クロールモード（既定: false でスキップ＝冪等）
+      - CRAWL_FORCE_REFRESH=${CRAWL_FORCE_REFRESH:-false}
     depends_on:
       db:
         condition: service_healthy
@@ -163,6 +166,7 @@ services:
       - ./crawler/urls.csv:/app/crawler/urls.csv
       - ./crawler/index_urls.txt:/app/crawler/index_urls.txt
       - ./crawler/categories.json:/app/crawler/categories.json
+      - ./crawler/overrides.csv:/app/crawler/overrides.csv
       - ./crawler/normalize_categories.py:/app/crawler/normalize_categories.py
     networks:
       - backend_net

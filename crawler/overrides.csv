@@ -1,0 +1,8 @@
+url,faculty,department
+# このファイルは「コース分類の手動上書き」を永続化するためのものです。
+#   - 優先順位: overrides.csv > urls.csv の faculty/department > AI抽出
+#   - 値は categories.json に存在する正式名称を使うこと（正規化で照合されます）
+#   - インデックスページに載らない / コースをまたぐ / AI・自動分類が誤る研究室をここで固定します
+#   - url は urls.csv と同じ研究室URL（完全一致）。# で始まる行と空行は無視されます
+# 記入例（先頭の # を外して使用）:
+# https://example.lab.kyoto-u.ac.jp/,情報学研究科,知能情報学コース

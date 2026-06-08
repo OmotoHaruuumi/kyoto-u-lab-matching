@@ -64,6 +64,7 @@ async def crawl_lab_webpage(
     url: str,
     faculty_override: str | None = None,
     department_override: str | None = None,
+    force: bool = False,
 ):
     """
     Main flow for crawling a single lab webpage:
@@ -72,13 +73,16 @@ async def crawl_lab_webpage(
     3. Fetch selected subpages
     4. Combine all text and extract structured data via Gemini
     5. Save to database
+
+    force=True のときは既存レコードを無視して再取得し、DB側で上書き更新する。
     """
     logger.info(f"Starting crawl for {url}")
 
-    async with async_session_maker() as session:
-        if await check_url_crawled(session, url):
-            logger.info(f"Already crawled, skipping: {url}")
-            return
+    if not force:
+        async with async_session_maker() as session:
+            if await check_url_crawled(session, url):
+                logger.info(f"Already crawled, skipping: {url}")
+                return
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -121,6 +125,7 @@ async def crawl_lab_webpage(
                 session, url, combined_text, extracted_data,
                 faculty_override=faculty_override,
                 department_override=department_override,
+                force=force,
             )
             if success:
                 logger.info(f"Pipeline complete for {url}.")
@@ -153,8 +158,15 @@ def load_urls_from_csv(csv_path: str) -> list[dict]:
 
 
 async def main():
-    """CSVファイルからURLを読み込んでクロールする。CSVがなければデフォルトURLを使用。"""
+    """CSVファイルからURLを読み込んでクロールする。CSVがなければデフォルトURLを使用。
+
+    環境変数 CRAWL_FORCE_REFRESH=true で、既存レコードを上書き更新する再クロールモードになる。
+    """
     import os
+    force = os.environ.get("CRAWL_FORCE_REFRESH", "false").strip().lower() in ("1", "true", "yes")
+    if force:
+        logger.info("CRAWL_FORCE_REFRESH=true — 既存レコードを上書き更新します。")
+
     csv_path = os.path.join(os.path.dirname(__file__), "urls.csv")
     entries = load_urls_from_csv(csv_path)
 
@@ -167,6 +179,7 @@ async def main():
             entry["url"],
             faculty_override=entry["faculty"] or None,
             department_override=entry["department"] or None,
+            force=force,
         )
 
 

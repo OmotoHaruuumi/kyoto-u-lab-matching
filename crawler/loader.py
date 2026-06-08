@@ -1,4 +1,5 @@
 import asyncio
+import csv
 import json
 import logging
 from pathlib import Path
@@ -29,6 +30,39 @@ _DEPT_LOOKUP: dict[str, tuple[str, str]] = {
     for fac, depts in _CATEGORIES.items()
     for dept in depts
 }
+
+# ---------------------------------------------------------------------------
+# Manual category overrides (overrides.csv)
+# ---------------------------------------------------------------------------
+# 手動でのコース分類上書き。AI抽出・urls.csv より優先する。
+# DB を直接いじる代わりにファイルへ永続化することで、再クロール時に自動再適用される。
+_OVERRIDES_PATH = Path(__file__).parent / "overrides.csv"
+
+
+def _load_overrides() -> dict[str, tuple[Optional[str], Optional[str]]]:
+    """overrides.csv を読み込み url -> (faculty, department) のマップを返す。
+    空行と '#' で始まる url の行は無視する。"""
+    mapping: dict[str, tuple[Optional[str], Optional[str]]] = {}
+    if not _OVERRIDES_PATH.exists():
+        return mapping
+    try:
+        with open(_OVERRIDES_PATH, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                url = (row.get("url") or "").strip()
+                if not url or url.startswith("#"):
+                    continue
+                mapping[url] = (
+                    (row.get("faculty") or "").strip() or None,
+                    (row.get("department") or "").strip() or None,
+                )
+        if mapping:
+            logger.info(f"Loaded {len(mapping)} category overrides from {_OVERRIDES_PATH.name}")
+    except Exception as e:
+        logger.warning(f"Failed to read {_OVERRIDES_PATH.name}: {e}")
+    return mapping
+
+
+_OVERRIDES = _load_overrides()
 
 
 def _normalize_category(faculty: Optional[str], department: Optional[str]) -> tuple[Optional[str], Optional[str]]:
@@ -95,6 +129,7 @@ async def store_lab_data(
     data: LabExtractionResult,
     faculty_override: Optional[str] = None,
     department_override: Optional[str] = None,
+    force: bool = False,
 ) -> bool:
     """
     Store the extracted lab data into the DB, update data_source state,
@@ -102,33 +137,45 @@ async def store_lab_data(
 
     faculty_override / department_override: urls.csv から渡された確定値。
     指定された場合は AI 抽出値より優先し、categories.json で正規化する。
+    overrides.csv に該当 url があれば、それを最優先で採用する。
+
+    force=True のときは、既存の同一URLレコードを削除してから入れ直す（再クロール更新）。
+    force=False（既定）のときは、既にクロール済みならスキップする（冪等）。
     """
     # 1. Check idempotency: See if this exact URL is already in successful DataSource
-    # First see if any lab has this URL and was successfully crawled
-    existing_ds_result = await session.execute(
-        select(DataSource).where(DataSource.url == url, DataSource.status == "done")
-    )
-    if existing_ds_result.scalars().first():
-        logger.info(f"URL already crawled successfully. Skipping: {url}")
-        return True
+    #    force=True の場合はスキップせず、後段で既存レコードを削除して入れ直す。
+    if not force:
+        existing_ds_result = await session.execute(
+            select(DataSource).where(DataSource.url == url, DataSource.status == "done")
+        )
+        if existing_ds_result.scalars().first():
+            logger.info(f"URL already crawled successfully. Skipping: {url}")
+            return True
 
-    # Check if a Lab with the EXACT same URL already exists globally (to update instead of duplicate)
+    # Check if a Lab with the EXACT same URL already exists globally
     existing_lab_result = await session.execute(
         select(Lab).where(Lab.lab_url == url)
     )
     existing_lab = existing_lab_result.scalars().first()
-    
+
     if existing_lab:
-        logger.info(f"Lab with URL {url} already exists. Currently we skip updates for brevity.")
-        # If we wanted to update, we'd delete old data or update relationships here
-        return True
+        if not force:
+            logger.info(f"Lab with URL {url} already exists. Skipping (use force to refresh).")
+            return True
+        # force: 既存ラボを削除（professors/themes/chunks/data_sources は cascade で消える）
+        logger.info(f"force refresh: deleting existing lab id={existing_lab.id} for {url}")
+        await session.delete(existing_lab)
+        await session.flush()
 
     logger.info(f"Saving lab data for: {data.name}")
 
     # 2. Create Lab (validate faculty/department against categories.json)
-    # urls.csv からのオーバーライド値を優先、なければ AI 抽出値を使用
-    raw_faculty = faculty_override if faculty_override else data.faculty
-    raw_dept = department_override if department_override else data.department
+    # 優先順位: overrides.csv > urls.csv のオーバーライド > AI 抽出値
+    ov_faculty, ov_dept = _OVERRIDES.get(url, (None, None))
+    raw_faculty = ov_faculty or faculty_override or data.faculty
+    raw_dept = ov_dept or department_override or data.department
+    if ov_faculty or ov_dept:
+        logger.info(f"Using category override from overrides.csv: faculty={ov_faculty!r} department={ov_dept!r}")
     if faculty_override:
         logger.info(f"Using faculty override from CSV: {faculty_override!r}")
     if department_override:
