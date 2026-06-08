@@ -119,6 +119,27 @@ CRAWL_FORCE_REFRESH=true docker compose --profile crawler up crawler
 
 > 既定（`CRAWL_FORCE_REFRESH` 未設定）ではクロール済みURLはスキップされる（冪等）。`true` のときだけ上書き更新する。
 
+#### 研究科ごとに分割して収集・クロールする
+
+研究科ごとにサイト構造が異なるため、収集ロジックは `crawler/collectors/` にサイト構造単位で分割している
+（`informatics.py` = 情報学タイプ、`engineering.py` = 工学タイプ）。`collect_urls.py` は URL を見て担当
+collector に振り分けるだけ。新しいサイト構造の研究科は `collectors/<name>.py` を追加して
+[collectors/__init__.py](crawler/collectors/__init__.py) の `_REGISTRY` に登録する。
+
+```bash
+# ① 特定の研究科だけ URL 収集（urls.csv にマージ、他研究科は保持）
+python crawler/collect_urls.py --faculty 工学研究科
+
+# ② 特定の研究科だけクロール（CRAWL_FACULTY で urls.csv の対象行に絞る）
+CRAWL_FACULTY=工学研究科 docker compose --profile crawler up crawler
+
+# 組み合わせ可: 工学だけを上書き再クロール
+CRAWL_FACULTY=工学研究科 CRAWL_FORCE_REFRESH=true docker compose --profile crawler up crawler
+```
+
+> `--faculty` / `CRAWL_FACULTY` を省略すると全研究科が対象。研究科ごとに段階的に増やせる。
+> 残りの研究科のカバレッジは [crawler/COVERAGE.md](crawler/COVERAGE.md) で管理。
+
 ### 5. アクセス
 
 | サービス | URL |

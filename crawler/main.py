@@ -160,15 +160,27 @@ def load_urls_from_csv(csv_path: str) -> list[dict]:
 async def main():
     """CSVファイルからURLを読み込んでクロールする。CSVがなければデフォルトURLを使用。
 
-    環境変数 CRAWL_FORCE_REFRESH=true で、既存レコードを上書き更新する再クロールモードになる。
+    環境変数:
+      CRAWL_FORCE_REFRESH=true  既存レコードを上書き更新する再クロールモード
+      CRAWL_FACULTY=<研究科名>    その研究科の行だけをクロール（研究科ごとに分割実行）
     """
     import os
     force = os.environ.get("CRAWL_FORCE_REFRESH", "false").strip().lower() in ("1", "true", "yes")
     if force:
         logger.info("CRAWL_FORCE_REFRESH=true — 既存レコードを上書き更新します。")
 
+    faculty_filter = os.environ.get("CRAWL_FACULTY", "").strip()
+
     csv_path = os.path.join(os.path.dirname(__file__), "urls.csv")
     entries = load_urls_from_csv(csv_path)
+
+    if faculty_filter:
+        before = len(entries)
+        entries = [e for e in entries if e["faculty"] == faculty_filter]
+        logger.info(f"CRAWL_FACULTY={faculty_filter!r} — {before}件中 {len(entries)}件に絞り込み。")
+        if not entries:
+            logger.warning(f"{faculty_filter!r} に一致する行が urls.csv にありません。終了します。")
+            return
 
     if not entries:
         logger.info("Using fallback default URLs.")

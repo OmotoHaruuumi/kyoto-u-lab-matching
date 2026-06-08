@@ -157,6 +157,8 @@ services:
     environment:
       # true で既存レコードを上書き更新する再クロールモード（既定: false でスキップ＝冪等）
       - CRAWL_FORCE_REFRESH=${CRAWL_FORCE_REFRESH:-false}
+      # 研究科名を指定すると、その研究科の行だけをクロール（未指定なら全件）
+      - CRAWL_FACULTY=${CRAWL_FACULTY:-}
     depends_on:
       db:
         condition: service_healthy

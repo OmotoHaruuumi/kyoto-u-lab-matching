@@ -1,21 +1,34 @@
 """
 crawler/collect_urls.py
 
-crawler/index_urls.txt に記載されたインデックスページのURLから
-研究室サイトのURLを抽出し、crawler/urls.csv に保存するスクリプト。
+crawler/index_urls.txt に記載されたインデックスページのURLから研究室サイトのURLを抽出し、
+crawler/urls.csv（4列: url, source_page, faculty, department）に保存する。
+
+収集ロジック本体は collectors/ パッケージに分割されている。このスクリプトは
+「どの collector を使うかの振り分け」と「研究科フィルタ」「CSVへのマージ/上書き」だけを担う。
 
 index_urls.txt の # コメントから faculty / department を読み取る:
   # ========== 京都大学大学院 工学研究科 ========== → faculty
   # 社会基盤工学専攻                               → department
 
 使い方:
-  docker run --rm --network host kyoto-u-lab-matching-crawler python crawler/collect_urls.py
+  # 全研究科を収集して urls.csv を全面上書き
+  python crawler/collect_urls.py
 
-URL ごとの抽出戦略:
-  - t.kyoto-u.ac.jp (工学研究科): navTree → 研究室セクション → 研究室Webサイト
-  - それ以外 (情報学研究科等): 「研究室サイトへ」リンク
+  # 特定の研究科だけ収集して、その研究科ぶんだけ urls.csv にマージ（他研究科は保持）
+  python crawler/collect_urls.py --faculty 工学研究科
+
+  # 任意のURLを直接指定して収集（faculty/department は空でマージ）
+  python crawler/collect_urls.py --url https://example.kyoto-u.ac.jp/
+
+  Docker:
+  docker run --rm --network host kyoto-u-lab-matching-crawler \\
+      python crawler/collect_urls.py --faculty 工学研究科
 """
 
+from __future__ import annotations
+
+import argparse
 import asyncio
 import csv
 import logging
@@ -23,27 +36,29 @@ import re
 import sys
 from pathlib import Path
 
-from playwright.async_api import async_playwright, Browser
+# crawler パッケージを import 可能にする（リポジトリルートを sys.path に追加）
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from crawler.collectors import select_collector  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 INDEX_URLS_FILE = Path(__file__).parent / "index_urls.txt"
 OUTPUT_CSV = Path(__file__).parent / "urls.csv"
+FIELDNAMES = ["url", "source_page", "faculty", "department"]
 
 
-def load_index_entries() -> list[dict]:
+def load_index_entries(faculty_filter: str | None = None) -> list[dict]:
     """
     index_urls.txt を解析して (url, faculty, department) のリストを返す。
 
     # === ... 工学研究科 === → current_faculty を更新
     # 社会基盤工学専攻       → current_department を更新
     URL行                    → (url, current_faculty, current_department) を追加
-    """
-    if len(sys.argv) > 1:
-        # コマンドライン引数でURLが指定された場合はそちらを使う（faculty/department は空）
-        return [{"url": u, "faculty": "", "department": ""} for u in sys.argv[1:]]
 
+    faculty_filter を指定すると、その研究科のエントリだけを返す。
+    """
     if not INDEX_URLS_FILE.exists():
         logger.error(f"{INDEX_URLS_FILE} が見つかりません。")
         sys.exit(1)
@@ -72,160 +87,24 @@ def load_index_entries() -> list[dict]:
                         current_department = dept
             else:
                 # URL行
+                if faculty_filter and current_faculty != faculty_filter:
+                    continue
                 entries.append({
                     "url": line,
                     "faculty": current_faculty,
                     "department": current_department,
                 })
 
-    logger.info(f"Loaded {len(entries)} index entries from {INDEX_URLS_FILE}")
+    if faculty_filter:
+        logger.info(f"Loaded {len(entries)} index entries for {faculty_filter!r}")
+    else:
+        logger.info(f"Loaded {len(entries)} index entries (all faculties)")
     return entries
 
 
-def is_engineering_url(url: str) -> bool:
-    return "t.kyoto-u.ac.jp" in url
-
-
-# ---------------------------------------------------------------------------
-# 情報学研究科: 「研究室サイトへ」リンクを抽出
-# ---------------------------------------------------------------------------
-
-async def extract_ist_lab_urls(
-    browser: Browser, index_url: str, faculty: str, department: str
-) -> list[dict]:
-    logger.info(f"[情報学] {index_url}")
-    results = []
-    page = await browser.new_page()
-    try:
-        await page.goto(index_url, wait_until="networkidle", timeout=30000)
-        links = await page.query_selector_all("a")
-        for link in links:
-            text = (await link.inner_text()).strip()
-            href = await link.get_attribute("href")
-            if href and "研究室サイトへ" in text:
-                results.append({
-                    "url": href,
-                    "source_page": index_url,
-                    "faculty": faculty,
-                    "department": department,
-                })
-                logger.info(f"  Found: {href}")
-    except Exception as e:
-        logger.error(f"Error fetching {index_url}: {e}")
-    finally:
-        await page.close()
-    return results
-
-
-# ---------------------------------------------------------------------------
-# 工学研究科: navTree → 研究室セクション → 研究室Webサイト or ページ自体
-# ---------------------------------------------------------------------------
-
-async def extract_eng_lab_urls(
-    browser: Browser, index_url: str, faculty: str, department: str
-) -> list[dict]:
-    """
-    1. index_url の navTree から専攻内グループページのリンクを取得
-    2. 各グループページで <h2>研究室</h2> 以下のリンクを取得
-    3. 各リンク先で「研究室Webサイト」があればそのURL、なければリンク先自体を使う
-    """
-    logger.info(f"[工学] {index_url}")
-    results = []
-
-    # Step 1: navTree からサブページURLを取得
-    page = await browser.new_page()
-    try:
-        await page.goto(index_url, wait_until="networkidle", timeout=30000)
-        nav_hrefs: list[str] = await page.evaluate("""
-            () => {
-                const ul = document.querySelector('ul.navTree.navTreeLevel1');
-                if (!ul) return [];
-                return [...ul.querySelectorAll('a[href]')].map(a => a.href);
-            }
-        """)
-        logger.info(f"  navTree sub-pages: {nav_hrefs}")
-        if not nav_hrefs:
-            nav_hrefs = [index_url]
-    except Exception as e:
-        logger.error(f"Error fetching {index_url}: {e}")
-        await page.close()
-        return results
-    finally:
-        await page.close()
-
-    # Step 2: 各サブページで <h2>研究室</h2> 以下のリンクを取得
-    for nav_url in nav_hrefs:
-        page = await browser.new_page()
-        try:
-            await page.goto(nav_url, wait_until="networkidle", timeout=30000)
-            lab_links: list[dict] = await page.evaluate("""
-                () => {
-                    const h2s = [...document.querySelectorAll('h2')];
-                    const h2 = h2s.find(el => el.innerText.trim() === '研究室');
-                    if (!h2) return [];
-                    const links = [];
-                    let el = h2.nextElementSibling;
-                    while (el && el.tagName !== 'H2') {
-                        el.querySelectorAll('a[href]').forEach(a => {
-                            if (a.href) links.push({ href: a.href, text: a.innerText.trim() });
-                        });
-                        el = el.nextElementSibling;
-                    }
-                    return links;
-                }
-            """)
-            logger.info(f"  研究室 links ({nav_url}): {[l['text'] for l in lab_links]}")
-        except Exception as e:
-            logger.error(f"Error fetching sub-page {nav_url}: {e}")
-            await page.close()
-            continue
-        finally:
-            await page.close()
-
-        # Step 3: 各研究室ページで「研究室Webサイト」リンクを探す
-        for lab_link in lab_links:
-            lab_detail_url = lab_link["href"]
-            page = await browser.new_page()
-            try:
-                await page.goto(lab_detail_url, wait_until="networkidle", timeout=30000)
-                website_href: str | None = await page.evaluate("""
-                    () => {
-                        const h2s = [...document.querySelectorAll('h2')];
-                        const h2 = h2s.find(el => el.innerText.trim() === '研究室ウェブサイト');
-                        if (!h2) return null;
-                        let el = h2.nextElementSibling;
-                        while (el && el.tagName !== 'H2') {
-                            const a = el.querySelector('a[href]');
-                            if (a) return a.href;
-                            el = el.nextElementSibling;
-                        }
-                        return null;
-                    }
-                """)
-                final_url = website_href if website_href else lab_detail_url
-                logger.info(
-                    f"  → {'Webサイト' if website_href else 'ページ自体'}: {final_url}"
-                )
-                results.append({
-                    "url": final_url,
-                    "source_page": index_url,
-                    "faculty": faculty,
-                    "department": department,
-                })
-            except Exception as e:
-                logger.error(f"Error visiting lab detail {lab_detail_url}: {e}")
-            finally:
-                await page.close()
-
-    return results
-
-
-# ---------------------------------------------------------------------------
-# main
-# ---------------------------------------------------------------------------
-
-async def main():
-    entries = load_index_entries()
+async def collect_entries(entries: list[dict]) -> list[dict]:
+    """各インデックスエントリを担当 collector に振り分けて研究室URLを収集する。"""
+    from playwright.async_api import async_playwright  # 実行時にのみ必要
 
     all_labs: list[dict] = []
     seen_urls: set[str] = set()
@@ -234,15 +113,10 @@ async def main():
         browser = await p.chromium.launch(headless=True)
         try:
             for entry in entries:
-                url = entry["url"]
-                faculty = entry["faculty"]
-                department = entry["department"]
-
-                if is_engineering_url(url):
-                    labs = await extract_eng_lab_urls(browser, url, faculty, department)
-                else:
-                    labs = await extract_ist_lab_urls(browser, url, faculty, department)
-
+                collector = select_collector(entry["url"])
+                labs = await collector.collect(
+                    browser, entry["url"], entry["faculty"], entry["department"]
+                )
                 for lab in labs:
                     if lab["url"] not in seen_urls:
                         seen_urls.add(lab["url"])
@@ -250,16 +124,93 @@ async def main():
         finally:
             await browser.close()
 
-    if not all_labs:
-        logger.warning("No lab URLs found. Check the index page structure.")
+    return all_labs
+
+
+def _read_existing(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    with open(path, newline="", encoding="utf-8") as f:
+        return [
+            {k: (row.get(k) or "") for k in FIELDNAMES}
+            for row in csv.DictReader(f)
+            if (row.get("url") or "").strip()
+        ]
+
+
+def _write_csv(path: Path, rows: list[dict]) -> None:
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def save_results(new_rows: list[dict], faculty_filter: str | None) -> None:
+    """
+    faculty_filter 指定あり → 既存 urls.csv をマージ（対象研究科ぶんを差し替え、他は保持）。
+    指定なし               → 全面上書き。
+    """
+    if not faculty_filter:
+        _write_csv(OUTPUT_CSV, new_rows)
+        logger.info(f"\n✅ {len(new_rows)} lab URLs saved to {OUTPUT_CSV}（全面上書き）")
         return
 
-    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["url", "source_page", "faculty", "department"])
-        writer.writeheader()
-        writer.writerows(all_labs)
+    existing = _read_existing(OUTPUT_CSV)
+    new_urls = {r["url"] for r in new_rows}
+    # 対象研究科の古い行 と URL重複行 を取り除き、他研究科は保持
+    kept = [
+        r for r in existing
+        if r["faculty"] != faculty_filter and r["url"] not in new_urls
+    ]
+    merged = kept + new_rows
+    _write_csv(OUTPUT_CSV, merged)
+    logger.info(
+        f"\n✅ {faculty_filter}: {len(new_rows)}件をマージ "
+        f"（保持 {len(kept)}件 / 合計 {len(merged)}件）→ {OUTPUT_CSV}"
+    )
 
-    logger.info(f"\n✅ {len(all_labs)} lab URLs saved to {OUTPUT_CSV}")
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="研究室URLを収集して urls.csv に保存する")
+    parser.add_argument(
+        "--faculty",
+        help="この研究科のインデックスだけを収集し、urls.csv にマージする（他研究科は保持）",
+    )
+    parser.add_argument(
+        "--url",
+        nargs="+",
+        help="任意のURLを直接指定して収集（faculty/department は空でマージ）",
+    )
+    return parser.parse_args()
+
+
+async def main():
+    args = parse_args()
+
+    if args.url:
+        entries = [{"url": u, "faculty": "", "department": ""} for u in args.url]
+        faculty_filter = None  # 任意URLは全面上書きせずマージ扱いにする
+        labs = await collect_entries(entries)
+        # 任意URL指定時は既存を保持してマージ（faculty 空のものを差し替え）
+        existing = _read_existing(OUTPUT_CSV)
+        new_urls = {r["url"] for r in labs}
+        kept = [r for r in existing if r["url"] not in new_urls]
+        _write_csv(OUTPUT_CSV, kept + labs)
+        logger.info(f"\n✅ {len(labs)}件をマージ（保持 {len(kept)}件）→ {OUTPUT_CSV}")
+        return
+
+    faculty_filter = args.faculty
+    entries = load_index_entries(faculty_filter=faculty_filter)
+    if not entries:
+        logger.warning("対象のインデックスエントリがありません。index_urls.txt を確認してください。")
+        return
+
+    labs = await collect_entries(entries)
+    if not labs:
+        logger.warning("No lab URLs found. Check the index page structure / collector.")
+        return
+
+    save_results(labs, faculty_filter)
 
 
 if __name__ == "__main__":
